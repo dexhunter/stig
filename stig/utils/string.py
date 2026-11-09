@@ -10,6 +10,7 @@
 # http://www.gnu.org/licenses/gpl-3.0.txt
 
 import os
+from itertools import chain
 from unicodedata import east_asian_width as _east_asian_width
 from unicodedata import normalize as _normalize_unicode
 
@@ -52,32 +53,31 @@ def strcrop(string, width, tail=None):
     If `tail` is not None, it must be a string that is appended to the cropped
     string.
     """
-    def widechar_indexes(s):
-        for i,c in enumerate(s):
-            if _east_asian_width(c) in 'FW':
-                yield i
-
     if strwidth(string) <= width:
         return string  # string is already short enough
 
     if tail is not None:
         width -= strwidth(tail)  # Account for tail in final width
 
-    indexes = list(widechar_indexes(string)) + [len(string)]
-    if not indexes:
-        return string[:width]  # No wide chars, regular cropping is ok
+    if string.isascii():
+        widechar_indexes = ()  # ASCII has no wide characters
+    else:
+        widechar_indexes = (i for i, c in enumerate(string) if _east_asian_width(c) in 'FW')
 
     parts = []
     start = 0
-    end = 0
-    currwidth = strwidth(''.join(parts))
+    currwidth = 0
 
-    while indexes and currwidth < width and end < len(string):
-        end = indexes.pop(0)
+    for end in chain(widechar_indexes, (len(string),)):
+        if currwidth >= width:
+            break
         if end > 0:
             parts.append(string[start:end])
-            currwidth = strwidth(''.join(parts))
             start = end
+            # No character is wider than 2 columns, so `width` is out of
+            # reach while `2 * end < width` and we can skip the measurement
+            if 2 * end >= width:
+                currwidth = strwidth(string[:end])
 
     if currwidth > width:
         excess = currwidth - width
